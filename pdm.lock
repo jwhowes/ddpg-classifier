@@ -5,10 +5,21 @@
 groups = ["default"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:d5fe56b0e08ef0a48d50774542296a9de7f26bc135c36f28efb1672536c7b052"
+content_hash = "sha256:f4f26b1e0428c181f2d76c199fc629de2d598c4b9e8ba7429cd0d497dca2bc70"
 
 [[metadata.targets]]
 requires_python = "==3.12.*"
+
+[[package]]
+name = "einops"
+version = "0.8.1"
+requires_python = ">=3.8"
+summary = "A new flavour of deep learning operations"
+groups = ["default"]
+files = [
+    {file = "einops-0.8.1-py3-none-any.whl", hash = "sha256:919387eb55330f5757c6bea9165c5ff5cfe63a642682ea788a6d472576d81737"},
+    {file = "einops-0.8.1.tar.gz", hash = "sha256:de5d960a7a761225532e0f1959e5315ebeafc0cd43394732f103ca44b9837e84"},
+]
 
 [[package]]
 name = "filelock"
