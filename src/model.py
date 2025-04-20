@@ -1,8 +1,9 @@
-from typing import Optional, overload
+from typing import Optional, List, Tuple
 from math import sqrt
 
 import torch
 import torch.nn.functional as F
+from torchvision.transforms.functional import crop, resize
 from einops import rearrange
 from torch import nn, Tensor
 
@@ -132,6 +133,8 @@ class Transformer(nn.Module):
         for layer in self.layers:
             x = layer(x, self.freqs[:L], self.attention_mask[:L, :L])
 
+        return x
+
 
 class Agent(nn.Module):
     def __init__(
@@ -139,6 +142,9 @@ class Agent(nn.Module):
             max_length: int
     ):
         super(Agent, self).__init__()
+        self.patch_size = patch_size
+        self.max_length = max_length
+        self.in_channels = in_channels
 
         self.transformer = Transformer(d_model, n_layers, n_heads, max_length)
 
@@ -163,7 +169,80 @@ class Agent(nn.Module):
             nn.Linear(d_model, 4)
         )
 
-    def forward(self, patch: Tensor, box: Tensor) -> Tensor:
+    @torch.inference_mode()
+    def random_history(self, image: Tensor, beta: float = 0.1, sigma: float = 0.3) -> List[Tuple[Tensor, Tensor]]:
+        B = image.shape[0]
+        image_size = image.shape[2]
+
+        box = torch.zeros(B, 1, 4, device=image.device)
+
+        box[:, 0, [2, 3]] = 1.0
+
+        patch = torch.zeros(B, 0, self.in_channels * self.patch_size * self.patch_size, device=image.device)
+
+        t = 0
+        history = []
+        while B > 0 and t < self.max_length:
+            t += 1
+
+            p = []
+            for img, b in zip(image, box):
+                y, x, h, w = (int(round(b_.item() * image_size, 0)) for b_ in b[-1])
+                w = max(w, self.patch_size)
+                h = max(h, self.patch_size)
+
+                if x + w > image_size:
+                    x = image_size - w
+
+                if y + h > image_size:
+                    h -= image_size - h
+
+                p.append(
+                    resize(
+                        crop(img, y, x, h, w),
+                        (self.patch_size, self.patch_size)
+                    ).flatten()
+                )
+
+            patch = torch.concatenate((
+                patch,
+                torch.stack(p).unsqueeze(1)
+            ), dim=1)
+
+            reward_pred, _, box_pred = self(patch, box)
+
+            beta_mask = torch.rand(B, device=image.device) < beta
+
+            terminate = (
+                    (beta_mask & (torch.rand(B, device=image.device) < 0.5)) |
+                    (~beta_mask & (reward_pred[:, -1].argmax(-1) == 0))
+            )
+
+            history.extend([
+                (p, b) for p, b, t in zip(patch, box, terminate) if t
+            ])
+
+            image = image[~terminate]
+            box = box[~terminate]
+
+            B = image.shape[0]
+
+            if B == 0:
+                break
+
+            box = torch.concatenate((
+                box,
+                (box_pred[~terminate, -1] + torch.randn(B, 4, device=image.device) * sigma).sigmoid().unsqueeze(1)
+            ), dim=1)
+
+        if patch.shape[0] > 0:
+            history.extend([
+                (p, b) for p, b in zip(patch, box)
+            ])
+
+        return history
+
+    def forward(self, patch: Tensor, box: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         x = self.patch_emb(patch) + self.box_emb(box)
 
         x = self.transformer(x)
