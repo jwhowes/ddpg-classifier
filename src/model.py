@@ -169,7 +169,7 @@ class Agent(nn.Module):
             nn.Linear(d_model, 4)
         )
 
-    @torch.inference_mode()
+    @torch.no_grad()
     def random_history(self, image: Tensor, beta: float = 0.1, sigma: float = 0.3) -> List[Tuple[Tensor, Tensor]]:
         B = image.shape[0]
         image_size = image.shape[2]
@@ -223,6 +223,7 @@ class Agent(nn.Module):
             ])
 
             image = image[~terminate]
+            patch = patch[~terminate]
             box = box[~terminate]
 
             B = image.shape[0]
